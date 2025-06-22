@@ -47,3 +47,15 @@ Here, 'data' $\in$ {computer, corafull, cs, photo, arxiv}.
 cd WaveGC_graph/datasets/
 
 gdown https://drive.google.com/u/0/uc?id=1AsDG-9WZ5b11lzHl8Ns4Qb0HxlcUOlQq && unzip pcqm4m-v2-contact.zip
+
+## Citation
+```
+@inproceedings{
+liu2025a,
+title={A General Graph Spectral Wavelet Convolution via Chebyshev Order Decomposition},
+author={Nian Liu and Xiaoxin He and Thomas Laurent and Francesco Di Giovanni and Michael M. Bronstein and Xavier Bresson},
+booktitle={Forty-second International Conference on Machine Learning},
+year={2025},
+url={https://openreview.net/forum?id=UTvdB2WPSp}
+}
+```
