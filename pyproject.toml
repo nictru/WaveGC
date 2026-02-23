@@ -10,6 +10,14 @@ dependencies = [
 [project.scripts]
 wavegc = "src.cli:cli"
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
@@ -22,6 +30,8 @@ python = "3.10.*"
 rich-click = ">=1.9.7,<2"
 
 [tool.pixi.pypi-dependencies]
+# Install this package itself (registers the `wavegc` console script)
+WaveGC = { path = ".", editable = true }
 # Torch stack from the official PyTorch wheel index
 # Pinned to 2.6.* to match the PyG CUDA extension wheels below
 torch = { version = ">=2.6,<2.7", index = "https://download.pytorch.org/whl/cu124" }

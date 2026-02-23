@@ -16,6 +16,11 @@ import logging
 import os
 import os.path as osp
 
+# Must be set before omnipath is imported. The autoload feature fires 6
+# metadata requests on import with a hardcoded 3s timeout, producing noisy
+# warnings on restricted networks. The local cache is sufficient.
+os.environ.setdefault("OMNIPATH_AUTOLOAD", "0")
+
 import numpy as np
 import torch
 from torch_geometric.data import Data, InMemoryDataset
