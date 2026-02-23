@@ -1,0 +1,47 @@
+[project]
+authors = [{name = "nictru", email = "nictru32@gmail.com"}]
+name = "WaveGC"
+requires-python = ">=3.10,<3.11"
+version = "0.1.0"
+
+[project.scripts]
+wavegc = "src.cli:cli"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.system-requirements]
+cuda = "12"
+
+[tool.pixi.dependencies]
+python = "3.10.*"
+rich-click = ">=1.9.7,<2"
+
+[tool.pixi.pypi-dependencies]
+# Torch stack from the official PyTorch wheel index
+# Pinned to 2.6.* to match the PyG CUDA extension wheels below
+torch = { version = ">=2.6,<2.7", index = "https://download.pytorch.org/whl/cu124" }
+torchvision = { version = ">=0.21,<0.22", index = "https://download.pytorch.org/whl/cu124" }
+torchaudio = { version = ">=2.6,<2.7", index = "https://download.pytorch.org/whl/cu124" }
+# Pre-built CUDA extension wheels — must match torch+Python+platform exactly, cannot be auto-resolved
+torch-scatter = { url = "https://data.pyg.org/whl/torch-2.6.0%2Bcu124/torch_scatter-2.1.2%2Bpt26cu124-cp310-cp310-linux_x86_64.whl" }
+torch-sparse = { url = "https://data.pyg.org/whl/torch-2.6.0%2Bcu124/torch_sparse-0.6.18%2Bpt26cu124-cp310-cp310-linux_x86_64.whl" }
+torch-cluster = { url = "https://data.pyg.org/whl/torch-2.6.0%2Bcu124/torch_cluster-1.6.3%2Bpt26cu124-cp310-cp310-linux_x86_64.whl" }
+torch-spline-conv = { url = "https://data.pyg.org/whl/torch-2.6.0%2Bcu124/torch_spline_conv-1.2.2%2Bpt26cu124-cp310-cp310-linux_x86_64.whl" }
+torch-geometric = "*"
+pytorch-lightning = "*"
+yacs = "*"
+torchmetrics = "*"
+performer-pytorch = "*"
+openbabel-wheel = "*"
+fsspec = "*"
+rdkit = "*"
+ogb = "*"
+wandb = "*"
+networkx = "*"
+einops = "*"
+tqdm = "*"
+pandas = "*"
+tensorboardX = "*"
+gdown = "*"
