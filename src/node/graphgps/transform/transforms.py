@@ -14,7 +14,8 @@ path_dict = {'computers': 'Amazon/Computers/',
             'photo': 'Amazon/Photo/', 
             'CoraFull': 'CoraFull/cora/', 
             'cs': 'Coauthor/CS/',
-            'arxiv': 'ogbn_arxiv/'}
+            'arxiv': 'ogbn_arxiv/',
+            'omnipath': 'OmniPath/'}
     
 def wave_in_memory(dataset):
     data_list = [dataset.get(i) for i in range(len(dataset))]
@@ -102,18 +103,25 @@ def pre_transform_in_memory(dataset, transform_func, show_progress=False):
     dataset._data_list = data_list
     dataset.data, dataset.slices = dataset.collate(data_list)
 
-def generate_splits(data, g_split):
+def generate_splits(data, g_split, valid_mask=None):
     n_nodes = len(data.x)
     train_mask = torch.zeros(n_nodes, dtype=bool)
-    valid_mask = torch.zeros(n_nodes, dtype=bool)
+    valid_mask_ = torch.zeros(n_nodes, dtype=bool)
     test_mask = torch.zeros(n_nodes, dtype=bool)
-    idx = torch.randperm(n_nodes)
-    val_num = test_num = int(n_nodes * (1 - g_split) / 2)
+
+    # Only assign splits to nodes that are eligible (e.g. have a valid label)
+    if valid_mask is not None:
+        eligible_idx = torch.where(valid_mask)[0]
+    else:
+        eligible_idx = torch.arange(n_nodes)
+
+    idx = eligible_idx[torch.randperm(len(eligible_idx))]
+    val_num = test_num = int(len(idx) * (1 - g_split) / 2)
     train_mask[idx[val_num + test_num:]] = True
-    valid_mask[idx[:val_num]] = True
+    valid_mask_[idx[:val_num]] = True
     test_mask[idx[val_num:val_num + test_num]] = True
     data.train_mask = train_mask
-    data.val_mask = valid_mask
+    data.val_mask = valid_mask_
     data.test_mask = test_mask
     return data
 

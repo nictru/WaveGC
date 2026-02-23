@@ -3,6 +3,9 @@ authors = [{name = "nictru", email = "nictru32@gmail.com"}]
 name = "WaveGC"
 requires-python = ">=3.10,<3.11"
 version = "0.1.0"
+dependencies = [
+    "omnipath>=1.0.12",
+]
 
 [project.scripts]
 wavegc = "src.cli:cli"

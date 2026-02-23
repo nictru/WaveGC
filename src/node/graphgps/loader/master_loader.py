@@ -100,6 +100,16 @@ def load_dataset_master(format, name, dataset_dir):
             dataset = Coauthor(dataset_dir, name)
             pre_transform_in_memory(dataset, partial(generate_splits, g_split = cfg.dataset.split[0]))
 
+        elif pyg_dataset_id == 'OmniPath':
+            from graphgps.loader.dataset.omnipath import OmniPathDataset
+            dataset = OmniPathDataset(dataset_dir)
+            valid_mask = dataset.data.y >= 0
+            pre_transform_in_memory(
+                dataset,
+                partial(generate_splits, g_split=cfg.dataset.split[0],
+                        valid_mask=valid_mask)
+            )
+
         else:
             raise ValueError(f"Unexpected PyG Dataset identifier: {format}")
     elif format == 'OGB':

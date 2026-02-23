@@ -1,0 +1,66 @@
+out_dir: results
+metric_best: accuracy
+wandb:
+  use: False
+  project: omnipath
+dataset:
+  format: PyG-OmniPath
+  name: omnipath
+  task: node
+  task_type: classification
+  transductive: True
+  split: [0.6, 0.2, 0.2]
+  node_encoder: True
+  node_encoder_name: LinearNode
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: DummyEdge
+  edge_encoder_bn: False
+train:
+  mode: custom
+  batch_size: 1
+  eval_period: 1
+  ckpt_period: 100
+model:
+  type: WaveModel
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gt:
+  layer_type: None+WaveGC
+  layers: 2
+  n_heads: 4
+  dim_hidden: 128  # must match gnn.dim_inner
+  dropout: 0.2
+  attn_dropout: 0.5
+  layer_norm: False
+  batch_norm: True
+gnn:
+  head: node
+  layers_pre_mp: 1
+  layers_post_mp: 1
+  dim_inner: 128  # must match gt.dim_hidden
+  layer_type: generalconv
+  stage_type: stack
+  batchnorm: True
+  act: relu
+  dropout: 0.2
+  agg: add
+  normalize_adj: False
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-3
+  base_lr: 0.001
+  max_epoch: 200
+  scheduler: cosine_with_warmup
+  num_warmup_epochs: 5
+WaveGC:
+  nheads: 4
+  trans_dropout: 0.1
+  drop: 0.0
+  num_n: 3
+  num_J: 3
+  pre_s: [5.0, 5.0, 5.0]
+  tight_frames: False
+  keep_eig_ratio: 0.3
