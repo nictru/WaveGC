@@ -42,6 +42,19 @@ _mark_done_option = click.option(
     help="Rename the config file with a [cyan]_done[/cyan] suffix after the run completes.",
 )
 
+_gpus_option = click.option(
+    "--gpus",
+    default=None,
+    metavar="IDS",
+    help=(
+        "GPU(s) to use. Accepts a single index ([cyan]0[/cyan]), "
+        "a comma-separated list ([cyan]0,1[/cyan]), "
+        "[cyan]all[/cyan] (all available), "
+        "or [cyan]cpu[/cyan] (CPU-only). "
+        "Omit to leave [cyan]CUDA_VISIBLE_DEVICES[/cyan] untouched."
+    ),
+)
+
 _opts_argument = click.argument("opts", nargs=-1, metavar="[OPTS]...")
 
 
@@ -66,8 +79,9 @@ def cli():
 @_cfg_option
 @_repeat_option
 @_mark_done_option
+@_gpus_option
 @_opts_argument
-def graph_cmd(cfg_file, repeat, mark_done, opts):
+def graph_cmd(cfg_file, repeat, mark_done, gpus, opts):
     """Train a [bold]graph-level[/bold] WaveGC model.
 
     \b
@@ -76,18 +90,19 @@ def graph_cmd(cfg_file, repeat, mark_done, opts):
 
     \b
     Example:
-        wavegc graph --cfg src/graph/configs/pcqm.yaml --repeat 3
+        wavegc graph --cfg src/graph/configs/pcqm.yaml --repeat 3 --gpus 0
     """
     overrides = dict(zip(opts[::2], opts[1::2]))
-    run_graph(cfg_file, repeat=repeat, mark_done=mark_done, overrides=overrides)
+    run_graph(cfg_file, repeat=repeat, mark_done=mark_done, gpus=gpus, overrides=overrides)
 
 
 @cli.command("node")
 @_cfg_option
 @_repeat_option
 @_mark_done_option
+@_gpus_option
 @_opts_argument
-def node_cmd(cfg_file, repeat, mark_done, opts):
+def node_cmd(cfg_file, repeat, mark_done, gpus, opts):
     """Train a [bold]node-level[/bold] WaveGC model.
 
     \b
@@ -96,10 +111,10 @@ def node_cmd(cfg_file, repeat, mark_done, opts):
 
     \b
     Example:
-        wavegc node --cfg src/node/configs/arxiv.yaml
+        wavegc node --cfg src/node/configs/arxiv.yaml --gpus 0,1
     """
     overrides = dict(zip(opts[::2], opts[1::2]))
-    run_node(cfg_file, repeat=repeat, mark_done=mark_done, overrides=overrides)
+    run_node(cfg_file, repeat=repeat, mark_done=mark_done, gpus=gpus, overrides=overrides)
 
 
 if __name__ == "__main__":

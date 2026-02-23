@@ -32,6 +32,36 @@ def _overrides_to_opts(overrides: dict[str, Any]) -> list[str]:
     return opts
 
 
+def _apply_gpus(gpus: int | str | list[int] | None) -> None:
+    """Set ``CUDA_VISIBLE_DEVICES`` from a flexible *gpus* value.
+
+    Must be called **before** importing torch.
+
+    Args:
+        gpus: Which GPUs to expose.
+
+            * ``None`` — leave ``CUDA_VISIBLE_DEVICES`` untouched.
+            * ``"all"`` — unset ``CUDA_VISIBLE_DEVICES`` (all GPUs visible).
+            * ``"cpu"`` or ``-1`` — hide all GPUs (CPU-only mode).
+            * ``int`` — single GPU index, e.g. ``0``.
+            * ``list[int]`` — multiple GPU indices, e.g. ``[0, 1]``.
+            * ``str`` — raw comma-separated indices, e.g. ``"0,1"``.
+    """
+    if gpus is None:
+        return
+    if isinstance(gpus, str) and gpus.lower() == "all":
+        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        return
+    if gpus == -1 or (isinstance(gpus, str) and gpus.lower() == "cpu"):
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        return
+    if isinstance(gpus, list):
+        value = ",".join(str(g) for g in gpus)
+    else:
+        value = str(gpus)
+    os.environ["CUDA_VISIBLE_DEVICES"] = value
+
+
 def _prepend_task_src(task: str) -> None:
     """Insert the task-specific source directory at the front of sys.path."""
     task_dir = str(Path(__file__).parent / task)
@@ -110,8 +140,10 @@ def _run_experiment(
     repeat: int,
     mark_done: bool,
     opts: list[str],
+    gpus: int | str | list[int] | None = None,
 ) -> None:
     """Low-level engine shared by the public API and the CLI."""
+    _apply_gpus(gpus)
     import torch
     from torch_geometric.graphgym.config import cfg, dump_cfg, set_cfg, load_cfg
     from torch_geometric.graphgym.loader import create_loader
@@ -199,6 +231,7 @@ def run_graph(
     repeat: int = 1,
     mark_done: bool = False,
     overrides: dict[str, Any] | None = None,
+    gpus: int | str | list[int] | None = None,
 ) -> None:
     """Run a graph-level WaveGC experiment.
 
@@ -211,6 +244,10 @@ def run_graph(
         overrides: Optional dict of GraphGym config overrides using
             dot-notation keys, e.g.
             ``{"optim.max_epoch": 100, "wandb.use": True}``.
+        gpus: GPU(s) to use. Accepts an ``int`` (``0``), a list of ints
+            (``[0, 1]``), a comma-separated string (``"0,1"``),
+            ``"all"`` (all available GPUs), or ``"cpu"`` / ``-1``
+            (CPU-only). ``None`` leaves ``CUDA_VISIBLE_DEVICES`` untouched.
 
     Example::
 
@@ -219,6 +256,7 @@ def run_graph(
         run_graph(
             "src/graph/configs/pcqm.yaml",
             repeat=3,
+            gpus=0,
             overrides={"optim.max_epoch": 50, "gt.layers": 2},
         )
     """
@@ -230,6 +268,7 @@ def run_graph(
         repeat=repeat,
         mark_done=mark_done,
         opts=_overrides_to_opts(overrides or {}),
+        gpus=gpus,
     )
 
 
@@ -239,6 +278,7 @@ def run_node(
     repeat: int = 1,
     mark_done: bool = False,
     overrides: dict[str, Any] | None = None,
+    gpus: int | str | list[int] | None = None,
 ) -> None:
     """Run a node-level WaveGC experiment.
 
@@ -251,6 +291,10 @@ def run_node(
         overrides: Optional dict of GraphGym config overrides using
             dot-notation keys, e.g.
             ``{"optim.max_epoch": 100, "wandb.use": True}``.
+        gpus: GPU(s) to use. Accepts an ``int`` (``0``), a list of ints
+            (``[0, 1]``), a comma-separated string (``"0,1"``),
+            ``"all"`` (all available GPUs), or ``"cpu"`` / ``-1``
+            (CPU-only). ``None`` leaves ``CUDA_VISIBLE_DEVICES`` untouched.
 
     Example::
 
@@ -258,6 +302,7 @@ def run_node(
 
         run_node(
             "src/node/configs/arxiv.yaml",
+            gpus=[0, 1],
             overrides={"optim.base_lr": 0.001},
         )
     """
@@ -269,4 +314,5 @@ def run_node(
         repeat=repeat,
         mark_done=mark_done,
         opts=_overrides_to_opts(overrides or {}),
+        gpus=gpus,
     )
