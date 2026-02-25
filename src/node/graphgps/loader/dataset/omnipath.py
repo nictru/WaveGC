@@ -1,8 +1,9 @@
 """
 OmniPath protein-interaction dataset for node-level classification.
 
-Nodes   : unique proteins (gene symbols) present in AllInteractions.
-Edges   : all interactions from AllInteractions, made undirected.
+Nodes   : unique proteins (gene symbols) present in the OmniPath core
+          interaction network (manually curated, high-confidence subset).
+Edges   : interactions from omnipath.interactions.OmniPath, made undirected.
 Features: multi-hot vector over intercellular 'parent' categories
           (ligand, receptor, ecm, …) from Intercell; zero-vector for
           proteins with no annotation.
@@ -53,6 +54,8 @@ INTERCELL_CATEGORIES = [
 class OmniPathDataset(InMemoryDataset):
     """Single-graph node-classification dataset built from OmniPath.
 
+    Uses the core OmniPath interaction network (omnipath.interactions.OmniPath),
+    a manually curated high-confidence subset (~8 800 proteins, ~85 000 edges).
     Downloads interaction and annotation data from the OmniPath REST API on
     first use and caches the processed PyG ``Data`` object under
     ``<root>/processed/data.pt``.
@@ -65,7 +68,7 @@ class OmniPathDataset(InMemoryDataset):
 
     def __init__(self, root: str, transform=None, pre_transform=None):
         super().__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -79,13 +82,14 @@ class OmniPathDataset(InMemoryDataset):
         pass  # fetched inside process()
 
     def process(self):
-        import omnipath as op
+        import omnipath.interactions as oi
 
-        logger.info("[OmniPath] Fetching AllInteractions …")
-        interactions = op.interactions.AllInteractions.get(genesymbols=True)
+        logger.info("[OmniPath] Fetching OmniPath core interactions …")
+        interactions = oi.OmniPath.get(genesymbols=True)
 
         logger.info("[OmniPath] Fetching Intercell annotations …")
-        intercell = op.requests.Intercell.get(scope="generic")
+        import omnipath.requests as or_
+        intercell = or_.Intercell.get(scope="generic")
 
         # ------------------------------------------------------------------
         # Build protein index
@@ -170,8 +174,24 @@ class OmniPathDataset(InMemoryDataset):
                 y[protein_to_idx[gene]] = cat_to_idx[parent]
 
         labelled_count = (y >= 0).sum().item()
+
+        # Remap labels to contiguous integers 0..K-1.
+        # INTERCELL_CATEGORIES defines 15 possible classes but not all may appear
+        # as a "first" label for any protein in a given interaction subset. Gaps
+        # in the label range confuse PyG's num_classes inference and cause the
+        # model output dimension to disagree with actual label values.
+        if labelled_count > 0:
+            unique_labels = y[y >= 0].unique().sort().values
+            y_remapped = y.clone()
+            for new_idx, old_idx in enumerate(unique_labels.tolist()):
+                y_remapped[y == int(old_idx)] = new_idx
+            y = y_remapped
+            actual_n_cats = len(unique_labels)
+        else:
+            actual_n_cats = 0
+
         logger.info(f"[OmniPath] {labelled_count}/{num_nodes} proteins labelled "
-                    f"across {n_cats} categories")
+                    f"across {actual_n_cats} categories")
 
         # ------------------------------------------------------------------
         # Save

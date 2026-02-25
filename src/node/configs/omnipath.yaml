@@ -64,3 +64,4 @@ WaveGC:
   pre_s: [5.0, 5.0, 5.0]
   tight_frames: False
   keep_eig_ratio: 0.3
+  keep_thre: 0.1

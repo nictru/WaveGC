@@ -1,9 +1,18 @@
 import logging
 import time
+import warnings
 
 import numpy as np
 import torch
 from scipy.stats import stats
+
+# torchmetrics fires this on imbalanced splits where a class has no positive
+# samples in a given batch / split.  It is expected behaviour for rare classes.
+warnings.filterwarnings(
+    "ignore",
+    message="No positive samples in targets",
+    category=UserWarning,
+)
 from sklearn.metrics import accuracy_score, precision_score, recall_score, \
     f1_score, roc_auc_score, mean_absolute_error, mean_squared_error, \
     confusion_matrix, root_mean_squared_error
@@ -256,8 +265,8 @@ class CustomLogger(Logger):
                 **custom_stats
             }
 
-        # print
-        logging.info('{}: {}'.format(self.name, stats))
+        # debug: full stats dict written to JSON; only shown at debug verbosity
+        logging.debug('{}: {}'.format(self.name, stats))
         # json
         dict_to_json(stats, '{}/stats.json'.format(self.out_dir))
         # tensorboard
@@ -265,8 +274,8 @@ class CustomLogger(Logger):
             dict_to_tb(stats, self.tb_writer, cur_epoch)
         self.reset()
         if cur_epoch < 3:
-            logging.info(f"...computing epoch stats took: "
-                         f"{time.perf_counter() - start_time:.2f}s")
+            logging.debug(f"...computing epoch stats took: "
+                          f"{time.perf_counter() - start_time:.2f}s")
         return stats
 
 
