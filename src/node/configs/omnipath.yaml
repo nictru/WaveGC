@@ -16,6 +16,8 @@ dataset:
   edge_encoder: True
   edge_encoder_name: DummyEdge
   edge_encoder_bn: False
+  encoder_dim: 256  # output dim of node encoder; must match gt.dim_hidden
+  edge_dim: 256     # output dim of edge encoder; must match gt.dim_hidden
 train:
   mode: custom
   batch_size: 1
@@ -28,9 +30,9 @@ model:
   graph_pooling: add
 gt:
   layer_type: None+WaveGC
-  layers: 2
+  layers: 3
   n_heads: 4
-  dim_hidden: 128  # must match gnn.dim_inner
+  dim_hidden: 256  # must match gnn.dim_inner
   dropout: 0.2
   attn_dropout: 0.5
   layer_norm: False
@@ -39,7 +41,7 @@ gnn:
   head: node
   layers_pre_mp: 1
   layers_post_mp: 1
-  dim_inner: 128  # must match gt.dim_hidden
+  dim_inner: 256  # must match gt.dim_hidden
   layer_type: generalconv
   stage_type: stack
   batchnorm: True
@@ -64,4 +66,4 @@ WaveGC:
   pre_s: [5.0, 5.0, 5.0]
   tight_frames: False
   keep_eig_ratio: 0.3
-  keep_thre: 0.1
+  keep_thre: 0.01
