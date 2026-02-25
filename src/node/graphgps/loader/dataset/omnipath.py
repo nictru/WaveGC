@@ -104,13 +104,39 @@ class OmniPathDataset(InMemoryDataset):
             & interactions[tgt_col].str.strip().astype(bool)
         ]
 
-        all_proteins = sorted(
+        # ------------------------------------------------------------------
+        # Build protein / complex index
+        # ------------------------------------------------------------------
+        # Step 1 — collect every endpoint that appears in interactions
+        #          (includes complex nodes like "ACVR1B_ACVR2A")
+        endpoint_proteins = sorted(
             set(interactions[src_col]) | set(interactions[tgt_col])
         )
-        protein_to_idx = {p: i for i, p in enumerate(all_proteins)}
+        protein_to_idx = {p: i for i, p in enumerate(endpoint_proteins)}
+
+        # Step 2 — for every complex node, ensure each of its constituent
+        #          genes also has an individual node in the graph.
+        #          Complexes stay because they are important for graph
+        #          structure; individual members are needed so that every
+        #          protein gets its own embedding slot.
+        complex_names = [p for p in endpoint_proteins if "_" in p]
+        new_members = sorted({
+            gene
+            for c in complex_names
+            for gene in c.split("_")
+            if gene and gene not in protein_to_idx
+        })
+        for p in new_members:
+            protein_to_idx[p] = len(protein_to_idx)
+
+        all_proteins = endpoint_proteins + new_members
         num_nodes = len(all_proteins)
-        logger.info(f"[OmniPath] {num_nodes} unique proteins, "
-                    f"{len(interactions)} interactions")
+        logger.info(
+            f"[OmniPath] {num_nodes} nodes: "
+            f"{len(endpoint_proteins)} interaction endpoints "
+            f"({len(complex_names)} complexes) + "
+            f"{len(new_members)} complex-member proteins added"
+        )
 
         # ------------------------------------------------------------------
         # Edge index + edge attributes
@@ -139,6 +165,30 @@ class OmniPathDataset(InMemoryDataset):
         edge_index, edge_attr = to_undirected(edge_index, edge_attr,
                                               num_nodes=num_nodes,
                                               reduce="max")
+
+        # ------------------------------------------------------------------
+        # Complex-membership edges: complex node ↔ each constituent gene.
+        # These are undirected structural edges with zero attributes
+        # (no stimulation / inhibition / direction signal).
+        # ------------------------------------------------------------------
+        m_src, m_tgt = [], []
+        for c in complex_names:
+            c_idx = protein_to_idx[c]
+            for gene in c.split("_"):
+                if gene and gene in protein_to_idx:
+                    m_src.append(c_idx)
+                    m_tgt.append(protein_to_idx[gene])
+
+        if m_src:
+            # Add both directions so the graph stays undirected
+            m_ei = torch.tensor(
+                [m_src + m_tgt, m_tgt + m_src], dtype=torch.long
+            )
+            m_ea = torch.zeros(len(m_src) * 2, edge_attr.shape[1],
+                               dtype=torch.float)
+            edge_index = torch.cat([edge_index, m_ei], dim=1)
+            edge_attr = torch.cat([edge_attr, m_ea], dim=0)
+            logger.info(f"[OmniPath] Added {len(m_src)} complex-membership edges")
 
         # ------------------------------------------------------------------
         # Node features: multi-hot over INTERCELL_CATEGORIES

@@ -134,6 +134,116 @@ def _loop_settings(cfg, repeat: int):
 # Core experiment engine
 # ---------------------------------------------------------------------------
 
+def _best_checkpoint(run_dir: Path, metric: str, metric_agg: str) -> "Path | None":
+    """Return the path to the best epoch's checkpoint, or None if unavailable.
+
+    Reads ``val/stats.json`` to find the best epoch, then checks whether a
+    matching ``.ckpt`` file exists.  Falls back to the numerically highest
+    checkpoint file if the exact epoch is missing.
+    """
+    try:
+        from torch_geometric.graphgym.utils.io import json_to_dict_list
+        stats = json_to_dict_list(str(run_dir / "val" / "stats.json"))
+        if not stats:
+            return None
+        m = metric if metric != "auto" else ("auc" if "auc" in stats[0] else "accuracy")
+        values = [s.get(m, 0.0) for s in stats]
+        best_idx = (values.index(max(values)) if metric_agg == "argmax"
+                    else values.index(min(values)))
+        best_epoch = stats[best_idx]["epoch"]
+    except Exception:
+        best_epoch = None
+
+    ckpt_dir = run_dir / "ckpt"
+    if not ckpt_dir.exists():
+        return None
+    ckpts = sorted(ckpt_dir.glob("*.ckpt"), key=lambda p: int(p.stem))
+    if not ckpts:
+        return None
+
+    if best_epoch is not None:
+        exact = ckpt_dir / f"{best_epoch}.ckpt"
+        if exact.exists():
+            return exact
+        # Best epoch checkpoint not on disk (e.g. old run with ckpt_best=False);
+        # use the checkpoint with the closest epoch number.
+        closest = min(ckpts, key=lambda p: abs(int(p.stem) - best_epoch))
+        logging.warning(
+            f"[embed] Checkpoint for best epoch {best_epoch} not found; "
+            f"using epoch {closest.stem} instead."
+        )
+        return closest
+
+    # Could not determine best epoch — fall back to the last saved checkpoint.
+    return ckpts[-1]
+
+
+def _save_embeddings(model, loaders, cfg, torch) -> None:
+    """Extract node embeddings from the trained model and save to run_dir.
+
+    Loads the best-epoch checkpoint (determined from val/stats.json), hooks
+    into the WaveLayer Sequential just before the classification head, and
+    writes ``embeddings.npy`` and ``node_names.txt`` into ``cfg.run_dir``.
+    Silently skips if the model does not expose a ``model.layers`` Sequential.
+    """
+    import numpy as np
+
+    layers = getattr(getattr(model, "model", None), "layers", None)
+    if layers is None:
+        return
+
+    # Load the best-epoch weights before extracting embeddings
+    best_ckpt = _best_checkpoint(Path(cfg.run_dir), cfg.metric_best, cfg.metric_agg)
+    if best_ckpt is not None:
+        ckpt_data = torch.load(str(best_ckpt), map_location="cpu", weights_only=False)
+        state_dict = ckpt_data.get("model_state", ckpt_data)
+        model.load_state_dict(state_dict)
+        logging.info(f"[embed] Loaded checkpoint: epoch {best_ckpt.stem} (best val)")
+    else:
+        logging.warning("[embed] No checkpoint found — using current (last) model weights.")
+
+    _captured: dict = {}
+
+    def _hook(module, inp, out):
+        _captured["x"] = out.x.detach().cpu()
+
+    handle = layers.register_forward_hook(_hook)
+    model.eval()
+    try:
+        with torch.no_grad():
+            for batch in loaders[0]:
+                batch.split = "test"
+                batch.to(torch.device(cfg.accelerator))
+                model(batch)
+    finally:
+        handle.remove()
+
+    if "x" not in _captured:
+        logging.warning("[embed] Hook did not fire — skipping embedding save.")
+        return
+
+    embeddings = _captured["x"].float().numpy()
+    out_dir = Path(cfg.run_dir)
+
+    emb_path = out_dir / "embeddings.npy"
+    np.save(str(emb_path), embeddings)
+
+    # Node names — protein symbols for OmniPath, integer strings otherwise
+    dataset_id = cfg.dataset.format.split("-", 1)[-1]
+    names_path = (
+        Path(cfg.dataset.dir) / dataset_id / "processed" / "protein_index.txt"
+    )
+    names_out = out_dir / "node_names.txt"
+    if names_path.exists():
+        names_out.write_text(names_path.read_text())
+    else:
+        names_out.write_text("\n".join(str(i) for i in range(len(embeddings))))
+
+    logging.info(
+        f"[embed] Saved embeddings {embeddings.shape} → {emb_path}"
+    )
+
+
 def _run_experiment(
     task: str,
     cfg_file: str,
@@ -166,6 +276,10 @@ def _run_experiment(
     set_cfg(cfg)
     load_cfg(cfg, args)
     _set_out_dir(cfg, cfg_file, cfg.name_tag)
+    # Always checkpoint the best validation epoch — required for embedding extraction.
+    cfg.train.enable_ckpt = True
+    cfg.train.ckpt_best = True
+    cfg.train.ckpt_clean = True
     dump_cfg(cfg)
     torch.set_num_threads(cfg.num_threads)
 
@@ -209,6 +323,8 @@ def _run_experiment(
             train(model, datamodule, logger=True)
         else:
             train_dict[cfg.train.mode](loggers, loaders, model, optimizer, scheduler)
+
+        _save_embeddings(model, loaders, cfg, torch)
 
     try:
         agg_runs(cfg.out_dir, cfg.metric_best)
@@ -316,3 +432,134 @@ def run_node(
         opts=_overrides_to_opts(overrides or {}),
         gpus=gpus,
     )
+
+
+def embed_nodes(
+    run_dir: str | Path,
+    *,
+    checkpoint: str | Path | None = None,
+    gpus: int | str | list[int] | None = None,
+) -> "tuple[np.ndarray, list[str]]":
+    """Extract node embeddings from a trained WaveGC node model.
+
+    Loads the saved config and checkpoint from *run_dir*, runs a single
+    forward pass through encoder → pre_mp → wave_generator → WaveLayers
+    (stopping before the classification head), and returns the resulting
+    node representations.
+
+    Args:
+        run_dir: Top-level output directory of a finished run,
+            e.g. ``"results/omnipath/2026-02-25 09:06:14"``.
+            The function locates ``config.yaml`` there and the latest
+            checkpoint under ``<run_dir>/0/ckpt/``.
+        checkpoint: Explicit path to a ``.ckpt`` file.  Overrides the
+            automatic discovery when supplied.
+        gpus: GPU selection — same semantics as :func:`run_node`.
+
+    Returns:
+        embeddings: float32 numpy array of shape ``[N, dim_hidden]``.
+        node_names: list of *N* node-name strings.  For OmniPath datasets
+            these are gene symbols; otherwise ``"0"``, ``"1"``, …
+
+    Example::
+
+        from src.api import embed_nodes
+        import pandas as pd
+
+        emb, names = embed_nodes(
+            "results/omnipath/2026-02-25 09:06:14",
+            gpus="all",
+        )
+        df = pd.DataFrame(emb, index=names)
+        df.to_parquet("omnipath_embeddings.parquet")
+    """
+    _apply_gpus(gpus)
+
+    import numpy as np
+    import torch
+    from torch_geometric.graphgym.config import cfg, set_cfg, load_cfg
+    from torch_geometric.graphgym.loader import create_loader
+    from torch_geometric.graphgym.model_builder import create_model
+    from torch_geometric.graphgym.utils.comp_budget import params_count
+    from torch_geometric.graphgym.utils.device import auto_select_device
+
+    _prepend_task_src("node")
+    import graphgps  # noqa — registers node-level modules
+
+    run_dir = Path(run_dir)
+    cfg_path = run_dir / "config.yaml"
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"config.yaml not found in {run_dir}")
+
+    # Locate checkpoint --------------------------------------------------
+    if checkpoint is None:
+        ckpt_dir = run_dir / "0" / "ckpt"
+        ckpts = sorted(ckpt_dir.glob("*.ckpt"), key=lambda p: int(p.stem))
+        if not ckpts:
+            raise FileNotFoundError(f"No checkpoints found in {ckpt_dir}")
+        checkpoint = ckpts[-1]
+        logging.info(f"[embed_nodes] Using checkpoint: {checkpoint}")
+    checkpoint = Path(checkpoint)
+
+    # Load config --------------------------------------------------------
+    set_cfg(cfg)
+    args = argparse.Namespace(
+        cfg_file=str(cfg_path), repeat=1, mark_done=False, opts=[]
+    )
+    load_cfg(cfg, args)
+    auto_select_device()
+
+    # Build dataset and model --------------------------------------------
+    loaders = create_loader()
+    model = create_model()
+    cfg.params = params_count(model)
+
+    # Load weights — GraphGym saves under 'model_state'; handle plain dicts too
+    ckpt_data = torch.load(str(checkpoint), map_location="cpu", weights_only=False)
+    state_dict = ckpt_data.get("model_state", ckpt_data)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    device = torch.device(cfg.accelerator)
+    model.to(device)
+
+    # Hook: capture batch.x after WaveLayers, before the classification head
+    _captured: dict[str, torch.Tensor] = {}
+
+    def _hook(module, inp, out):
+        _captured["embeddings"] = out.x.detach().cpu()
+
+    handle = model.model.layers.register_forward_hook(_hook)
+
+    try:
+        with torch.no_grad():
+            for batch in loaders[0]:   # full graph — all nodes present
+                batch.split = "test"
+                batch.to(device)
+                model(batch)
+    finally:
+        handle.remove()
+
+    if "embeddings" not in _captured:
+        raise RuntimeError(
+            "Forward hook did not fire. "
+            "Verify that model.model.layers is the WaveLayer Sequential."
+        )
+
+    embeddings: np.ndarray = _captured["embeddings"].float().numpy()
+
+    # Node names — protein symbols for OmniPath, integer strings otherwise
+    dataset_id = cfg.dataset.format.split("-", 1)[-1]   # e.g. "OmniPath"
+    names_path = (
+        Path(cfg.dataset.dir) / dataset_id / "processed" / "protein_index.txt"
+    )
+    if names_path.exists():
+        node_names = names_path.read_text().strip().splitlines()
+    else:
+        node_names = [str(i) for i in range(len(embeddings))]
+
+    logging.info(
+        f"[embed_nodes] Extracted embeddings: {embeddings.shape}  "
+        f"({len(node_names)} named nodes)"
+    )
+    return embeddings, node_names

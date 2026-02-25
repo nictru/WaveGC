@@ -2,10 +2,10 @@ out_dir: results
 metric_best: accuracy
 wandb:
   use: False
-  project: omnipath
+  project: string
 dataset:
-  format: PyG-OmniPath
-  name: omnipath
+  format: PyG-STRING
+  name: string
   task: node
   task_type: classification
   transductive: True
@@ -18,6 +18,7 @@ dataset:
   edge_encoder_bn: False
   encoder_dim: 256  # output dim of node encoder; must match gt.dim_hidden
   edge_dim: 256     # output dim of edge encoder; must match gt.dim_hidden
+  required_score: 900  # STRING combined_score threshold (0-1000): 400=medium, 700=high, 900=highest
 train:
   mode: custom
   batch_size: 1
@@ -66,4 +67,4 @@ WaveGC:
   pre_s: [5.0, 5.0, 5.0]
   tight_frames: False
   keep_eig_ratio: 0.3
-  keep_thre: 0.01
+  keep_thre: 0.02

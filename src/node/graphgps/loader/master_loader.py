@@ -110,6 +110,17 @@ def load_dataset_master(format, name, dataset_dir):
                         valid_mask=valid_mask)
             )
 
+        elif pyg_dataset_id == 'STRING':
+            from graphgps.loader.dataset.string_db import STRINGDataset
+            required_score = getattr(cfg.dataset, 'required_score', 700)
+            dataset = STRINGDataset(dataset_dir, required_score=required_score)
+            valid_mask = dataset.data.y >= 0
+            pre_transform_in_memory(
+                dataset,
+                partial(generate_splits, g_split=cfg.dataset.split[0],
+                        valid_mask=valid_mask)
+            )
+
         else:
             raise ValueError(f"Unexpected PyG Dataset identifier: {format}")
     elif format == 'OGB':

@@ -15,7 +15,8 @@ path_dict = {'computers': 'Amazon/Computers/',
             'CoraFull': 'CoraFull/cora/', 
             'cs': 'Coauthor/CS/',
             'arxiv': 'ogbn_arxiv/',
-            'omnipath': 'OmniPath/'}
+            'omnipath': 'OmniPath/',
+            'string': 'STRING/'}
     
 def wave_in_memory(dataset):
     data_list = [dataset.get(i) for i in range(len(dataset))]

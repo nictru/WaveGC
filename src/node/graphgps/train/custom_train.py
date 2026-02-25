@@ -242,6 +242,16 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                                 f"    {gtl.__class__.__name__} {li}: "
                                 f"gamma={gtl.attention.gamma.item()}"
                             )
+
+                patience = cfg.optim.early_stop_patience
+                if patience > 0 and (cur_epoch - best_epoch) >= patience:
+                    progress.console.print(
+                        f"[yellow]Early stopping: no improvement for "
+                        f"{cur_epoch - best_epoch} epochs "
+                        f"(patience={patience}, best epoch={best_epoch})[/yellow]"
+                    )
+                    progress.update(task_id, total=cur_epoch + 1)
+                    break
             else:
                 progress.update(task_id, advance=1)
     logging.info(f"Avg time per epoch: {np.mean(full_epoch_times):.2f}s")

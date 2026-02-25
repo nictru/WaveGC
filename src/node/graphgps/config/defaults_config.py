@@ -30,7 +30,16 @@ def extended_cfg(cfg):
     # Additional name tag used in `run_dir` and `wandb_name` auto generation.
     cfg.name_tag = ""
 
+    # Minimum combined_score threshold for the STRING dataset (0-1000).
+    # 400 = medium confidence, 700 = high confidence, 900 = highest confidence.
+    # Ignored for non-STRING datasets.
+    cfg.dataset.required_score = 700
+
     # In training, if True (and also cfg.train.enable_ckpt is True) then
     # always checkpoint the current best model based on validation performance,
     # instead, when False, follow cfg.train.eval_period checkpointing frequency.
     cfg.train.ckpt_best = False
+
+    # Early stopping: halt training when validation performance has not
+    # improved for this many consecutive epochs.  Set to 0 to disable.
+    cfg.optim.early_stop_patience = 15
