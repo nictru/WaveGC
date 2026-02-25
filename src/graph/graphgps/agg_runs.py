@@ -2,6 +2,9 @@ import logging
 import os
 
 import numpy as np
+from rich.console import Console
+from rich.table import Table
+from rich import box
 
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.utils.io import (
@@ -79,6 +82,53 @@ def rm_keys(dict, keys):
         dict.pop(key, None)
 
 
+def _print_results_table(results_best: dict) -> None:
+    """Render best-epoch metrics as a rich table to stdout."""
+    # Ordered set of metric keys we want to show (if present in the data)
+    METRIC_KEYS = ['loss', 'accuracy', 'f1', 'auc', 'ap', 'mae', 'rmse', 'r2']
+    SPLIT_STYLES = {'train': 'green', 'val': 'yellow', 'test': 'cyan'}
+
+    # Collect the columns that actually exist across all splits
+    present_metrics = []
+    for key in METRIC_KEYS:
+        if any(key in d for d in results_best.values()):
+            present_metrics.append(key)
+
+    best_epoch = next(iter(results_best.values())).get('epoch', '?')
+
+    table = Table(
+        title=f"Best results  ·  epoch {best_epoch}",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold",
+        title_style="bold magenta",
+    )
+    table.add_column("split", style="bold", justify="left")
+    for key in present_metrics:
+        table.add_column(key, justify="right")
+    table.add_column("time/epoch", justify="right", style="dim")
+
+    for split in ['train', 'val', 'test']:
+        if split not in results_best:
+            continue
+        d = results_best[split]
+        style = SPLIT_STYLES.get(split, "")
+        row = [f"[{style}]{split}[/{style}]"]
+        for key in present_metrics:
+            val = d.get(key)
+            if val is None:
+                row.append("—")
+            elif key == 'loss':
+                row.append(f"{val:.4f}")
+            else:
+                row.append(f"{val * 100:.2f}%")
+        t = d.get('time_epoch') or d.get('time_iter')
+        row.append(f"{t:.3f}s" if t is not None else "—")
+        table.add_row(*row)
+
+    Console().print(table)
+
+
 def agg_runs(dir, metric_best='auto'):
     r'''
     Aggregate over different random seeds of a single experiment
@@ -110,7 +160,6 @@ def agg_runs(dir, metric_best='auto'):
                     stats_list[
                         eval("performance_np.{}()".format(cfg.metric_agg))][
                         'epoch']
-                print(best_epoch)
 
             for split in os.listdir(dir_seed):
                 if is_split(split):
@@ -121,7 +170,6 @@ def agg_runs(dir, metric_best='auto'):
                         stats for stats in stats_list
                         if stats['epoch'] == best_epoch
                     ][0]
-                    print(stats_best)
                     stats_list = [[stats] for stats in stats_list]
                     if results[split] is None:
                         results[split] = stats_list
@@ -158,5 +206,9 @@ def agg_runs(dir, metric_best='auto'):
         dir_out = os.path.join(dir, 'agg', key)
         fname = os.path.join(dir_out, 'best.json')
         dict_to_json(value, fname)
+
+    # Pretty-print the best-epoch results as a rich table
+    _print_results_table(results_best)
+
     logging.info('Results aggregated across runs saved in {}'.format(
         os.path.join(dir, 'agg')))
